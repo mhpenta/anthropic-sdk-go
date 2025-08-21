@@ -1864,7 +1864,7 @@ func NewBetaTextBlock(text string) BetaContentBlockParamUnion {
 }
 
 func NewBetaImageBlock[
-T BetaBase64ImageSourceParam | BetaURLImageSourceParam | BetaFileImageSourceParam,
+	T BetaBase64ImageSourceParam | BetaURLImageSourceParam | BetaFileImageSourceParam,
 ](source T) BetaContentBlockParamUnion {
 	var image BetaImageBlockParam
 	switch v := any(source).(type) {
@@ -1879,7 +1879,7 @@ T BetaBase64ImageSourceParam | BetaURLImageSourceParam | BetaFileImageSourcePara
 }
 
 func NewBetaDocumentBlock[
-T BetaBase64PDFSourceParam | BetaPlainTextSourceParam | BetaContentBlockSourceParam | BetaURLPDFSourceParam | BetaFileDocumentSourceParam,
+	T BetaBase64PDFSourceParam | BetaPlainTextSourceParam | BetaContentBlockSourceParam | BetaURLPDFSourceParam | BetaFileDocumentSourceParam,
 ](source T) BetaContentBlockParamUnion {
 	var document BetaRequestDocumentBlockParam
 	switch v := any(source).(type) {
@@ -1941,7 +1941,7 @@ func NewBetaServerToolUseBlock(id string, input any, name BetaServerToolUseBlock
 }
 
 func NewBetaWebSearchToolResultBlock[
-T []BetaWebSearchResultBlockParam | BetaWebSearchToolRequestErrorParam,
+	T []BetaWebSearchResultBlockParam | BetaWebSearchToolRequestErrorParam,
 ](content T, toolUseID string) BetaContentBlockParamUnion {
 	var webSearchToolResult BetaWebSearchToolResultBlockParam
 	switch v := any(content).(type) {
@@ -1969,7 +1969,7 @@ func NewBetaWebFetchToolResultBlock[
 }
 
 func NewBetaCodeExecutionToolResultBlock[
-T BetaCodeExecutionToolResultErrorParam | BetaCodeExecutionResultBlockParam,
+	T BetaCodeExecutionToolResultErrorParam | BetaCodeExecutionResultBlockParam,
 ](content T, toolUseID string) BetaContentBlockParamUnion {
 	var codeExecutionToolResult BetaCodeExecutionToolResultBlockParam
 	switch v := any(content).(type) {
