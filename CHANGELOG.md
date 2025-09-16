@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.12.0 (2025-09-10)
+
+Full Changelog: [v1.11.0...v1.12.0](https://github.com/anthropics/anthropic-sdk-go/compare/v1.11.0...v1.12.0)
+
+### Features
+
+* **api:** adds support for web_fetch_20250910 tool ([6d5e237](https://github.com/anthropics/anthropic-sdk-go/commit/6d5e2370e14e1d125ebebcf741b721e88dc0e810))
+
+
+### Chores
+
+* tmp ([07b65e9](https://github.com/anthropics/anthropic-sdk-go/commit/07b65e9b178a1c280fc96e3f2a7bf30bd9932329))
+
+## 1.11.0 (2025-09-05)
+
+Full Changelog: [v1.10.0...v1.11.0](https://github.com/anthropics/anthropic-sdk-go/compare/v1.10.0...v1.11.0)
+
+### Features
+
+* **api:** adds support for Documents in tool results ([7161c2c](https://github.com/anthropics/anthropic-sdk-go/commit/7161c2ce9843b80374186dc83fd84a8dfebda45f))
+
+
+### Bug Fixes
+
+* **client:** fix issue in Go with nested document content params ([b442cc3](https://github.com/anthropics/anthropic-sdk-go/commit/b442cc3fd41ee53a18f8ccec868ae1057dae53a8))
+* use release please annotations on more places ([31a09b0](https://github.com/anthropics/anthropic-sdk-go/commit/31a09b07991cc92d38517c80320d154246779a76))
+
+## 1.10.0 (2025-09-02)
+
+Full Changelog: [v1.9.1...v1.10.0](https://github.com/anthropics/anthropic-sdk-go/compare/v1.9.1...v1.10.0)
+
+### Features
+
+* **api:** makes 1 hour TTL Cache Control generally available ([c28a9a3](https://github.com/anthropics/anthropic-sdk-go/commit/c28a9a3272acb1973f2a2fb768157ab27a8f440d))
+* **client:** adds support for code-execution-2025-08-26 tool ([066a126](https://github.com/anthropics/anthropic-sdk-go/commit/066a126a92a8e09f10742f13e0db36724a96c788))
+* use custom decoder for []ContentBlockParamUnion ([#464](https://github.com/anthropics/anthropic-sdk-go/issues/464)) ([4731597](https://github.com/anthropics/anthropic-sdk-go/commit/473159792468018c709da311d7ac27139cf851e6))
+
+
+### Bug Fixes
+
+* close body before retrying ([c970e10](https://github.com/anthropics/anthropic-sdk-go/commit/c970e10ff45c04c38a5a2c87fe85a8c191e06f80))
+
+
+### Chores
+
+* deprecate older claude-3-5 sonnet models ([#453](https://github.com/anthropics/anthropic-sdk-go/issues/453)) ([e49d59b](https://github.com/anthropics/anthropic-sdk-go/commit/e49d59b14be89dcfb858b565e5183ecf9c1e246b))
+
 ## 1.9.1 (2025-08-12)
 
 Full Changelog: [v1.9.0...v1.9.1](https://github.com/anthropics/anthropic-sdk-go/compare/v1.9.0...v1.9.1)

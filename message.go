@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/internal/apijson"
@@ -17,6 +18,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/respjson"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
+	"github.com/tidwall/gjson"
 )
 
 // MessageService contains methods and other services that help with interacting
@@ -154,7 +156,18 @@ func NewCacheControlEphemeralParam() CacheControlEphemeralParam {
 // This struct has a constant value, construct it with
 // [NewCacheControlEphemeralParam].
 type CacheControlEphemeralParam struct {
-	Type constant.Ephemeral `json:"type,required"`
+	// The time-to-live for the cache control breakpoint.
+	//
+	// This may be one the following values:
+	//
+	// - `5m`: 5 minutes
+	// - `1h`: 1 hour
+	//
+	// Defaults to `5m`.
+	//
+	// Any of "5m", "1h".
+	TTL  CacheControlEphemeralTTL `json:"ttl,omitzero"`
+	Type constant.Ephemeral       `json:"type,required"`
 	paramObj
 }
 
@@ -163,6 +176,41 @@ func (r CacheControlEphemeralParam) MarshalJSON() (data []byte, err error) {
 	return param.MarshalObject(r, (*shadow)(&r))
 }
 func (r *CacheControlEphemeralParam) UnmarshalJSON(data []byte) error {
+	return apijson.UnmarshalRoot(data, r)
+}
+
+// The time-to-live for the cache control breakpoint.
+//
+// This may be one the following values:
+//
+// - `5m`: 5 minutes
+// - `1h`: 1 hour
+//
+// Defaults to `5m`.
+type CacheControlEphemeralTTL string
+
+const (
+	CacheControlEphemeralTTLTTL5m CacheControlEphemeralTTL = "5m"
+	CacheControlEphemeralTTLTTL1h CacheControlEphemeralTTL = "1h"
+)
+
+type CacheCreation struct {
+	// The number of input tokens used to create the 1 hour cache entry.
+	Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens,required"`
+	// The number of input tokens used to create the 5 minute cache entry.
+	Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens,required"`
+	// JSON contains metadata for fields, check presence with [respjson.Field.Valid].
+	JSON struct {
+		Ephemeral1hInputTokens respjson.Field
+		Ephemeral5mInputTokens respjson.Field
+		ExtraFields            map[string]respjson.Field
+		raw                    string
+	} `json:"-"`
+}
+
+// Returns the unmodified JSON received from the API
+func (r CacheCreation) RawJSON() string { return r.JSON.raw }
+func (r *CacheCreation) UnmarshalJSON(data []byte) error {
 	return apijson.UnmarshalRoot(data, r)
 }
 
@@ -1188,6 +1236,26 @@ func init() {
 		apijson.Discriminator[ServerToolUseBlockParam]("server_tool_use"),
 		apijson.Discriminator[WebSearchToolResultBlockParam]("web_search_tool_result"),
 	)
+
+	// Register custom decoder for []ContentBlockParamUnion to handle string content
+	apijson.RegisterCustomDecoder[[]ContentBlockParamUnion](func(node gjson.Result, value reflect.Value, defaultDecoder func(gjson.Result, reflect.Value) error) error {
+		// If it's a string, convert it to a TextBlock automatically
+		if node.Type == gjson.String {
+			textBlock := TextBlockParam{
+				Text: node.String(),
+				Type: "text",
+			}
+			contentUnion := ContentBlockParamUnion{
+				OfText: &textBlock,
+			}
+			arrayValue := reflect.MakeSlice(value.Type(), 1, 1)
+			arrayValue.Index(0).Set(reflect.ValueOf(contentUnion))
+			value.Set(arrayValue)
+			return nil
+		}
+
+		return defaultDecoder(node, value)
+	})
 }
 
 // The properties Content, Type are required.
@@ -1210,8 +1278,8 @@ func (r *ContentBlockSourceParam) UnmarshalJSON(data []byte) error {
 //
 // Use [param.IsOmitted] to confirm if a field is set.
 type ContentBlockSourceContentUnionParam struct {
-	OfString                    param.Opt[string]                     `json:",omitzero,inline"`
-	OfContentBlockSourceContent []ContentBlockSourceContentUnionParam `json:",omitzero,inline"`
+	OfString                    param.Opt[string]                         `json:",omitzero,inline"`
+	OfContentBlockSourceContent []ContentBlockSourceContentItemUnionParam `json:",omitzero,inline"`
 	paramUnion
 }
 
@@ -1263,6 +1331,100 @@ func (u *ContentBlockSourceContentUnionParam) asAny() any {
 		return &u.OfContentBlockSourceContent
 	}
 	return nil
+}
+
+func ContentBlockSourceContentItemParamOfText(text string) ContentBlockSourceContentItemUnionParam {
+	var variant TextBlockParam
+	variant.Text = text
+	return ContentBlockSourceContentItemUnionParam{OfText: &variant}
+}
+
+func ContentBlockSourceContentItemParamOfImage[T Base64ImageSourceParam | URLImageSourceParam](source T) ContentBlockSourceContentItemUnionParam {
+	var image ImageBlockParam
+	switch v := any(source).(type) {
+	case Base64ImageSourceParam:
+		image.Source.OfBase64 = &v
+	case URLImageSourceParam:
+		image.Source.OfURL = &v
+	}
+	return ContentBlockSourceContentItemUnionParam{OfImage: &image}
+}
+
+// Only one field can be non-zero.
+//
+// Use [param.IsOmitted] to confirm if a field is set.
+type ContentBlockSourceContentItemUnionParam struct {
+	OfText  *TextBlockParam  `json:",omitzero,inline"`
+	OfImage *ImageBlockParam `json:",omitzero,inline"`
+	paramUnion
+}
+
+func (u ContentBlockSourceContentItemUnionParam) MarshalJSON() ([]byte, error) {
+	return param.MarshalUnion(u, u.OfText, u.OfImage)
+}
+func (u *ContentBlockSourceContentItemUnionParam) UnmarshalJSON(data []byte) error {
+	return apijson.UnmarshalRoot(data, u)
+}
+
+func (u *ContentBlockSourceContentItemUnionParam) asAny() any {
+	if !param.IsOmitted(u.OfText) {
+		return u.OfText
+	} else if !param.IsOmitted(u.OfImage) {
+		return u.OfImage
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u ContentBlockSourceContentItemUnionParam) GetText() *string {
+	if vt := u.OfText; vt != nil {
+		return &vt.Text
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u ContentBlockSourceContentItemUnionParam) GetCitations() []TextCitationParamUnion {
+	if vt := u.OfText; vt != nil {
+		return vt.Citations
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u ContentBlockSourceContentItemUnionParam) GetSource() *ImageBlockParamSourceUnion {
+	if vt := u.OfImage; vt != nil {
+		return &vt.Source
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u ContentBlockSourceContentItemUnionParam) GetType() *string {
+	if vt := u.OfText; vt != nil {
+		return (*string)(&vt.Type)
+	} else if vt := u.OfImage; vt != nil {
+		return (*string)(&vt.Type)
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's CacheControl property, if present.
+func (u ContentBlockSourceContentItemUnionParam) GetCacheControl() *CacheControlEphemeralParam {
+	if vt := u.OfText; vt != nil {
+		return &vt.CacheControl
+	} else if vt := u.OfImage; vt != nil {
+		return &vt.CacheControl
+	}
+	return nil
+}
+
+func init() {
+	apijson.RegisterUnion[ContentBlockSourceContentItemUnionParam](
+		"type",
+		apijson.Discriminator[TextBlockParam]("text"),
+		apijson.Discriminator[ImageBlockParam]("image"),
+	)
 }
 
 // The properties Source, Type are required.
@@ -1890,15 +2052,23 @@ func (r *MetadataParam) UnmarshalJSON(data []byte) error {
 type Model string
 
 const (
-	ModelClaude3_7SonnetLatest      Model = "claude-3-7-sonnet-latest"
-	ModelClaude3_7Sonnet20250219    Model = "claude-3-7-sonnet-20250219"
-	ModelClaude3_5HaikuLatest       Model = "claude-3-5-haiku-latest"
-	ModelClaude3_5Haiku20241022     Model = "claude-3-5-haiku-20241022"
-	ModelClaudeSonnet4_20250514     Model = "claude-sonnet-4-20250514"
-	ModelClaudeSonnet4_0            Model = "claude-sonnet-4-0"
-	ModelClaude4Sonnet20250514      Model = "claude-4-sonnet-20250514"
-	ModelClaude3_5SonnetLatest      Model = "claude-3-5-sonnet-latest"
-	ModelClaude3_5Sonnet20241022    Model = "claude-3-5-sonnet-20241022"
+	ModelClaude3_7SonnetLatest   Model = "claude-3-7-sonnet-latest"
+	ModelClaude3_7Sonnet20250219 Model = "claude-3-7-sonnet-20250219"
+	ModelClaude3_5HaikuLatest    Model = "claude-3-5-haiku-latest"
+	ModelClaude3_5Haiku20241022  Model = "claude-3-5-haiku-20241022"
+	ModelClaudeSonnet4_20250514  Model = "claude-sonnet-4-20250514"
+	ModelClaudeSonnet4_0         Model = "claude-sonnet-4-0"
+	ModelClaude4Sonnet20250514   Model = "claude-4-sonnet-20250514"
+	ModelClaude3_5SonnetLatest   Model = "claude-3-5-sonnet-latest"
+	// Deprecated: Will reach end-of-life on October 22nd, 2025. Please migrate to a
+	// newer model. Visit
+	// https://docs.anthropic.com/en/docs/resources/model-deprecations for more
+	// information.
+	ModelClaude3_5Sonnet20241022 Model = "claude-3-5-sonnet-20241022"
+	// Deprecated: Will reach end-of-life on October 22nd, 2025. Please migrate to a
+	// newer model. Visit
+	// https://docs.anthropic.com/en/docs/resources/model-deprecations for more
+	// information.
 	ModelClaude_3_5_Sonnet_20240620 Model = "claude-3-5-sonnet-20240620"
 	ModelClaudeOpus4_0              Model = "claude-opus-4-0"
 	ModelClaudeOpus4_20250514       Model = "claude-opus-4-20250514"
@@ -3571,11 +3741,12 @@ type ToolResultBlockParamContentUnion struct {
 	OfText         *TextBlockParam         `json:",omitzero,inline"`
 	OfImage        *ImageBlockParam        `json:",omitzero,inline"`
 	OfSearchResult *SearchResultBlockParam `json:",omitzero,inline"`
+	OfDocument     *DocumentBlockParam     `json:",omitzero,inline"`
 	paramUnion
 }
 
 func (u ToolResultBlockParamContentUnion) MarshalJSON() ([]byte, error) {
-	return param.MarshalUnion(u, u.OfText, u.OfImage, u.OfSearchResult)
+	return param.MarshalUnion(u, u.OfText, u.OfImage, u.OfSearchResult, u.OfDocument)
 }
 func (u *ToolResultBlockParamContentUnion) UnmarshalJSON(data []byte) error {
 	return apijson.UnmarshalRoot(data, u)
@@ -3588,6 +3759,8 @@ func (u *ToolResultBlockParamContentUnion) asAny() any {
 		return u.OfImage
 	} else if !param.IsOmitted(u.OfSearchResult) {
 		return u.OfSearchResult
+	} else if !param.IsOmitted(u.OfDocument) {
+		return u.OfDocument
 	}
 	return nil
 }
@@ -3609,9 +3782,9 @@ func (u ToolResultBlockParamContentUnion) GetContent() []TextBlockParam {
 }
 
 // Returns a pointer to the underlying variant's property, if present.
-func (u ToolResultBlockParamContentUnion) GetTitle() *string {
-	if vt := u.OfSearchResult; vt != nil {
-		return &vt.Title
+func (u ToolResultBlockParamContentUnion) GetContext() *string {
+	if vt := u.OfDocument; vt != nil && vt.Context.Valid() {
+		return &vt.Context.Value
 	}
 	return nil
 }
@@ -3624,6 +3797,18 @@ func (u ToolResultBlockParamContentUnion) GetType() *string {
 		return (*string)(&vt.Type)
 	} else if vt := u.OfSearchResult; vt != nil {
 		return (*string)(&vt.Type)
+	} else if vt := u.OfDocument; vt != nil {
+		return (*string)(&vt.Type)
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u ToolResultBlockParamContentUnion) GetTitle() *string {
+	if vt := u.OfSearchResult; vt != nil {
+		return (*string)(&vt.Title)
+	} else if vt := u.OfDocument; vt != nil && vt.Title.Valid() {
+		return &vt.Title.Value
 	}
 	return nil
 }
@@ -3636,6 +3821,8 @@ func (u ToolResultBlockParamContentUnion) GetCacheControl() *CacheControlEphemer
 		return &vt.CacheControl
 	} else if vt := u.OfSearchResult; vt != nil {
 		return &vt.CacheControl
+	} else if vt := u.OfDocument; vt != nil {
+		return &vt.CacheControl
 	}
 	return nil
 }
@@ -3647,6 +3834,8 @@ func (u ToolResultBlockParamContentUnion) GetCitations() (res toolResultBlockPar
 	if vt := u.OfText; vt != nil {
 		res.any = &vt.Citations
 	} else if vt := u.OfSearchResult; vt != nil {
+		res.any = &vt.Citations
+	} else if vt := u.OfDocument; vt != nil {
 		res.any = &vt.Citations
 	}
 	return
@@ -3665,6 +3854,15 @@ type toolResultBlockParamContentUnionCitations struct{ any }
 //	}
 func (u toolResultBlockParamContentUnionCitations) AsAny() any { return u.any }
 
+// Returns a pointer to the underlying variant's property, if present.
+func (u toolResultBlockParamContentUnionCitations) GetEnabled() *bool {
+	switch vt := u.any.(type) {
+	case *CitationsConfigParam:
+		return paramutil.AddrIfPresent(vt.Enabled)
+	}
+	return nil
+}
+
 // Returns a subunion which exports methods to access subproperties
 //
 // Or use AsAny() to get the underlying value
@@ -3673,12 +3871,15 @@ func (u ToolResultBlockParamContentUnion) GetSource() (res toolResultBlockParamC
 		res.any = vt.Source.asAny()
 	} else if vt := u.OfSearchResult; vt != nil {
 		res.any = &vt.Source
+	} else if vt := u.OfDocument; vt != nil {
+		res.any = vt.Source.asAny()
 	}
 	return
 }
 
 // Can have the runtime types [*Base64ImageSourceParam], [*URLImageSourceParam],
-// [*string]
+// [*string], [*Base64PDFSourceParam], [*PlainTextSourceParam],
+// [*ContentBlockSourceParam], [*URLPDFSourceParam]
 type toolResultBlockParamContentUnionSource struct{ any }
 
 // Use the following switch statement to get the type of the union:
@@ -3687,15 +3888,30 @@ type toolResultBlockParamContentUnionSource struct{ any }
 //	case *anthropic.Base64ImageSourceParam:
 //	case *anthropic.URLImageSourceParam:
 //	case *string:
+//	case *anthropic.Base64PDFSourceParam:
+//	case *anthropic.PlainTextSourceParam:
+//	case *anthropic.ContentBlockSourceParam:
+//	case *anthropic.URLPDFSourceParam:
 //	default:
 //	    fmt.Errorf("not present")
 //	}
 func (u toolResultBlockParamContentUnionSource) AsAny() any { return u.any }
 
 // Returns a pointer to the underlying variant's property, if present.
+func (u toolResultBlockParamContentUnionSource) GetContent() *ContentBlockSourceContentUnionParam {
+	switch vt := u.any.(type) {
+	case *DocumentBlockParamSourceUnion:
+		return vt.GetContent()
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
 func (u toolResultBlockParamContentUnionSource) GetData() *string {
 	switch vt := u.any.(type) {
 	case *ImageBlockParamSourceUnion:
+		return vt.GetData()
+	case *DocumentBlockParamSourceUnion:
 		return vt.GetData()
 	}
 	return nil
@@ -3706,15 +3922,8 @@ func (u toolResultBlockParamContentUnionSource) GetMediaType() *string {
 	switch vt := u.any.(type) {
 	case *ImageBlockParamSourceUnion:
 		return vt.GetMediaType()
-	}
-	return nil
-}
-
-// Returns a pointer to the underlying variant's property, if present.
-func (u toolResultBlockParamContentUnionSource) GetURL() *string {
-	switch vt := u.any.(type) {
-	case *ImageBlockParamSourceUnion:
-		return vt.GetURL()
+	case *DocumentBlockParamSourceUnion:
+		return vt.GetMediaType()
 	}
 	return nil
 }
@@ -3724,6 +3933,19 @@ func (u toolResultBlockParamContentUnionSource) GetType() *string {
 	switch vt := u.any.(type) {
 	case *ImageBlockParamSourceUnion:
 		return vt.GetType()
+	case *DocumentBlockParamSourceUnion:
+		return vt.GetType()
+	}
+	return nil
+}
+
+// Returns a pointer to the underlying variant's property, if present.
+func (u toolResultBlockParamContentUnionSource) GetURL() *string {
+	switch vt := u.any.(type) {
+	case *ImageBlockParamSourceUnion:
+		return vt.GetURL()
+	case *DocumentBlockParamSourceUnion:
+		return vt.GetURL()
 	}
 	return nil
 }
@@ -3734,7 +3956,29 @@ func init() {
 		apijson.Discriminator[TextBlockParam]("text"),
 		apijson.Discriminator[ImageBlockParam]("image"),
 		apijson.Discriminator[SearchResultBlockParam]("search_result"),
+		apijson.Discriminator[DocumentBlockParam]("document"),
 	)
+
+	// Register custom decoder for []ToolResultBlockParamContentUnion to handle string content
+	apijson.RegisterCustomDecoder[[]ToolResultBlockParamContentUnion](func(node gjson.Result, value reflect.Value, defaultDecoder func(gjson.Result, reflect.Value) error) error {
+		// If it's a string, convert it to a TextBlock automatically
+		if node.Type == gjson.String {
+			textBlock := TextBlockParam{
+				Text: node.String(),
+				Type: "text",
+			}
+			contentUnion := ToolResultBlockParamContentUnion{
+				OfText: &textBlock,
+			}
+			arrayValue := reflect.MakeSlice(value.Type(), 1, 1)
+			arrayValue.Index(0).Set(reflect.ValueOf(contentUnion))
+			value.Set(arrayValue)
+			return nil
+		}
+
+		// If it's already an array, use the default decoder
+		return defaultDecoder(node, value)
+	})
 }
 
 // The properties Name, Type are required.
@@ -4059,6 +4303,8 @@ func (r *URLPDFSourceParam) UnmarshalJSON(data []byte) error {
 }
 
 type Usage struct {
+	// Breakdown of cached tokens by TTL
+	CacheCreation CacheCreation `json:"cache_creation,required"`
 	// The number of input tokens used to create the cache entry.
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens,required"`
 	// The number of input tokens read from the cache.
@@ -4075,6 +4321,7 @@ type Usage struct {
 	ServiceTier UsageServiceTier `json:"service_tier,required"`
 	// JSON contains metadata for fields, check presence with [respjson.Field.Valid].
 	JSON struct {
+		CacheCreation            respjson.Field
 		CacheCreationInputTokens respjson.Field
 		CacheReadInputTokens     respjson.Field
 		InputTokens              respjson.Field
@@ -4448,32 +4695,7 @@ type MessageNewParams struct {
 	// { "role": "user", "content": [{ "type": "text", "text": "Hello, Claude" }] }
 	// ```
 	//
-	// Starting with Claude 3 models, you can also send image content blocks:
-	//
-	// ```json
-	//
-	//	{
-	//	  "role": "user",
-	//	  "content": [
-	//	    {
-	//	      "type": "image",
-	//	      "source": {
-	//	        "type": "base64",
-	//	        "media_type": "image/jpeg",
-	//	        "data": "/9j/4AAQSkZJRg..."
-	//	      }
-	//	    },
-	//	    { "type": "text", "text": "What is in this image?" }
-	//	  ]
-	//	}
-	//
-	// ```
-	//
-	// We currently support the `base64` source type for images, and the `image/jpeg`,
-	// `image/png`, `image/gif`, and `image/webp` media types.
-	//
-	// See [examples](https://docs.anthropic.com/en/api/messages-examples#vision) for
-	// more input examples.
+	// See [input examples](https://docs.anthropic.com/en/api/messages-examples).
 	//
 	// Note that if you want to include a
 	// [system prompt](https://docs.anthropic.com/en/docs/system-prompts), you can use
@@ -4719,32 +4941,7 @@ type MessageCountTokensParams struct {
 	// { "role": "user", "content": [{ "type": "text", "text": "Hello, Claude" }] }
 	// ```
 	//
-	// Starting with Claude 3 models, you can also send image content blocks:
-	//
-	// ```json
-	//
-	//	{
-	//	  "role": "user",
-	//	  "content": [
-	//	    {
-	//	      "type": "image",
-	//	      "source": {
-	//	        "type": "base64",
-	//	        "media_type": "image/jpeg",
-	//	        "data": "/9j/4AAQSkZJRg..."
-	//	      }
-	//	    },
-	//	    { "type": "text", "text": "What is in this image?" }
-	//	  ]
-	//	}
-	//
-	// ```
-	//
-	// We currently support the `base64` source type for images, and the `image/jpeg`,
-	// `image/png`, `image/gif`, and `image/webp` media types.
-	//
-	// See [examples](https://docs.anthropic.com/en/api/messages-examples#vision) for
-	// more input examples.
+	// See [input examples](https://docs.anthropic.com/en/api/messages-examples).
 	//
 	// Note that if you want to include a
 	// [system prompt](https://docs.anthropic.com/en/docs/system-prompts), you can use
