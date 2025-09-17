@@ -789,7 +789,7 @@ func NewImageBlockBase64(mediaType string, encodedData string) ContentBlockParam
 }
 
 func NewDocumentBlock[
-	T Base64PDFSourceParam | PlainTextSourceParam | ContentBlockSourceParam | URLPDFSourceParam,
+T Base64PDFSourceParam | PlainTextSourceParam | ContentBlockSourceParam | URLPDFSourceParam,
 ](source T) ContentBlockParamUnion {
 	var document DocumentBlockParam
 	switch v := any(source).(type) {
@@ -853,7 +853,7 @@ func NewServerToolUseBlock(id string, input any) ContentBlockParamUnion {
 }
 
 func NewWebSearchToolResultBlock[
-	T []WebSearchResultBlockParam | WebSearchToolRequestErrorParam,
+T []WebSearchResultBlockParam | WebSearchToolRequestErrorParam,
 ](content T, toolUseID string) ContentBlockParamUnion {
 	var webSearchToolResult WebSearchToolResultBlockParam
 	switch v := any(content).(type) {
@@ -1294,7 +1294,7 @@ func (u ContentBlockSourceContentUnionParam) MarshalJSON() ([]byte, error) {
 		// Check if all elements are simple strings that should be marshaled as text blocks
 		allStrings := true
 		for _, item := range u.OfContentBlockSourceContent {
-			if param.IsOmitted(item.OfString) {
+			if param.IsOmitted(item.OfText) {
 				allStrings = false
 				break
 			}
@@ -1310,7 +1310,7 @@ func (u ContentBlockSourceContentUnionParam) MarshalJSON() ([]byte, error) {
 			for i, item := range u.OfContentBlockSourceContent {
 				blocks[i] = textBlock{
 					Type: "text",
-					Text: item.OfString.Value,
+					Text: item.OfText.Text,
 				}
 			}
 			return json.Marshal(blocks)
